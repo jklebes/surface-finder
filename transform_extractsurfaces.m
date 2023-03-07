@@ -1,4 +1,4 @@
-function focusTransformData_using_actinHeightMaps_crosssections(file_folder_actin, filefolder_myosinORnuclei, out_folder_actin, outfolder_myosinORnuclei, xsection_out_folder_actin, xsection_outfolder_myosinORnuclei, time_points, workers, offsets, varargin)
+function all_surfaces=transform_extractsurfaces(file_folder, out_folder,  xsection_out_folder, expFolder, info_file, matrix_path, time_points, workers, offsets, varargin)
 %{
 %     Function to focus the surface of the embryo using 45 degrees transformed data. 
 %     This is a modified verision of the square gradient focusing algorithm. 
@@ -16,11 +16,9 @@ function focusTransformData_using_actinHeightMaps_crosssections(file_folder_acti
 %     Method developed to focus myosin in ACTM1 embryos
 % 
 %     INPUTS
-%     file_folder_actin: folder containing the raw actin images
-%     file_folder_myosinORnuclei: folder containing the raw myosin images
+%     file_folder: folder containing the raw images
 %     
-%     out_folder_actin: folder to contain the actin surface images
-%     out_folder_myosinORnuclei: folder to contain the myosin surface images
+%     out_folder: folder to contain thesurface images
 % 
 %     time_interval: array specifying the first and last images
 %     workers: number of cores for the transformation
@@ -43,6 +41,55 @@ sq_side = 25;
 %width_lim = 40;
 overlaps = 3;
 
+read=false;
+
+if ~read
+    %% prepare affine transformation of raw data
+    %read info files
+    width = findMatchingNumber(info_file,{'Org Width:','%d'});
+    height = findMatchingNumber(info_file,{'Org Height:','%d'});
+    num_slices = findMatchingNumber(info_file,{'No Steps:','%d'});
+    original_dims = [width; height; num_slices;0];
+    %retrieve matrix
+    matrix = load(matrix_path);
+    %calculate new dimensions
+    new_dims = round(matrix*original_dims); %matrix multiply
+    %write new info file
+    transf_info_file = [out_folder filesep '_info.txt'];
+    fileID = fopen(transf_info_file, 'w');
+    fprintf(fileID,['Width: ', num2str(new_dims(1)) '\n']); %it is unclear how imageJ does the rounding.
+    fprintf(fileID,['Height: ',  num2str(new_dims(2)) '\n']);
+    fprintf(fileID,['Depth: ',  num2str(new_dims(3)) '\n']);
+    fclose(fileID);
+end
+
+% Compute the number of images and the format
+format=[];
+if isempty(format)
+    files = dir(expFolder);
+    files = {files.name};
+    files = {files{cellfun(@(x) length(x)>2, files)}};
+    if isempty(files)
+        format = [];
+    else
+        mainLength = cellfun(@(x) length(x),files);
+        [repet,categ]=hist(mainLength,unique(mainLength));
+        [~, maxRep] = max(repet);
+        mainLength = mainLength == categ(maxRep);
+        files = files(mainLength);
+
+        constant = ones(size(files{1}));
+        for f = 2:length(files)
+            constant = constant.*(files{f-1}==files{f});
+        end
+        numlength = sum(~constant); % number of zeros
+
+        format{1} = files{1}(1:find(~constant,1,'first')-1);
+        format{2} = ['%' num2str(numlength,'%02d') 'd'];
+        format{3} = files{1}(find(~constant,1,'last')+1:length(constant));
+    end
+end
+
 % start parallel pool
 pool = gcp('nocreate');
 if isempty(pool)
@@ -51,72 +98,68 @@ elseif pool.NumWorkers~=workers
     delete(pool);
     parpool(workers);
 end
-%all_surfaces=cell(length(time_points),1); %collect in cell array by
-%index
-parfor t_ind=1:length(time_points) %parfor
-    surfaces_=cell(2);
+all_surfaces=zeros(new_dims(1),new_dims(2),length(offsets),length(time_points), 'uint8'); 
+
+%prepare output directories 
+h_map_folder = [out_folder filesep 'h_map'];
+mkdir(h_map_folder);
+final_folder=cell(size(offsets));
+offset_index=1;
+for offset=offsets
+    final_folder{offset_index} = [out_folder filesep 'surface_' num2str(offset,'%02d')];
+    mkdir(final_folder{offset_index});
+    offset_index=offset_index+1;
+end
+mkdir(xsection_out_folder)
+parfor t_ind=1:length(time_points) %parfor - channel 1
     if ismember(t_ind, time_points)
-          
-    %% Read in raw input file - actin
-    info_filename=[file_folder_actin filesep '_info.txt'];
-    rawInputImage=[file_folder_actin filesep 'image_' num2str(t_ind,'%.04d') '_trans.raw'];
-    disp(['image ' num2str(t_ind) '  start read']);
-    tstart = tic;
-    img_vol_actin = read_3D_image(rawInputImage, info_filename);
-    
-    tend = toc(tstart);
-    disp(['tmp_trans_ actin data reading ' num2str(t_ind) ' took ' num2str(tend) ' seconds.'])
 
-    %% process to heightmaps
-    heightmap=calculate_heightmap(img_vol_actin, overlaps, sq_side, kernel_size); %from actin channel
-    %saved to
 
-    %% save heightmap
-    [~,~, Depth] = size(img_vol_actin);
-    save_heightmap(heightmap, Depth, t_ind, out_folder_actin)
+        if read
+            rawInputImage=[filefolder filesep 'image_' num2str(t_ind,'%.04d') '_trans.raw'];
+            %% Read in raw input file
+            disp(['image ' num2str(t_ind) '  start read']);
+            tstart = tic;
+            img_vol = read_3D_image(rawInputImage, info_filename);
 
-    %% extract and save actin surfaces
-    surfaces_{1}=select_surfaces(img_vol_actin, t_ind, heightmap, offsets, out_folder_actin);
-    
-    %% read second channel data
-    info_filename=[filefolder_myosinORnuclei filesep '_info.txt'];
-    rawInputImage=[filefolder_myosinORnuclei filesep 'image_' num2str(t_ind,'%.04d') '_trans.raw'];
-    img_vol_myosin = read_3D_image(rawInputImage, info_filename);
+            tend = toc(tstart);
+            disp(['tmp_trans_ data reading ' num2str(t_ind) ' took ' num2str(tend) ' seconds.'])
+        else
+            img_path = [expFolder filesep format{1} num2str(t_ind, format{2}) format{3}];
+            %% call program that uses java to read in, affine transform raw 3d data
+            disp(['image ' num2str(t_ind) ', start read and affine transform']);
+            tstart = tic;
+            img_vol = transform_45degrees_Java_single(img_path, matrix, original_dims(1:3), new_dims(1:3));   
+            tend = toc(tstart);
+            java.lang.System.gc(); %request java garbage collection?
+            disp(['data read and transform ' num2str(t_ind) ' took ' num2str(tend) ' seconds.'])
+        end
 
-    heightmap_myosin=calculate_heightmap(img_vol_myosin, overlaps, sq_side, kernel_size); %from actin channel
+        %% process to heightmaps
+        heightmap=calculate_heightmap(img_vol, overlaps, sq_side, kernel_size); 
+        %saved to
 
-    %% extract and save myosin surfaces
-    surfaces_{2}=select_surfaces(img_vol_myosin ,  t_ind, heightmap_myosin, offsets, outfolder_myosinORnuclei);
-    %fill array to return
-    %all_surfaces{t_ind}=surfaces_;
-    else 
-    disp(["time point " num2str(t_ind) " not found"]);
-    %placeholder for 3D data in cell array remains []
+        %% save heightmap
+        [~,~, Depth] = size(img_vol);
+        save_heightmap(heightmap, Depth, t_ind, h_map_folder)
+
+        %% extract and save surfaces
+        all_surfaces(:,:,:,t_ind)=select_surfaces(img_vol, t_ind, heightmap, offsets, final_folder);
+
+        %% do cross sections, while the 3D data for tindex-1, tindex is in memory
+        cross_sections(img_vol, xsection_out_folder, t_ind);
+
+    else
+        disp(["time point " num2str(t_ind) " not found"]);
+        %placeholder for 3D data in cell array remains []
     end
-    %% do cross sections, while the 3D data for tindex-1, tindex is in memory
-    cross_sections(img_vol_actin, xsection_out_folder_actin, t_ind-1);
-    cross_sections(img_vol_actin, xsection_outfolder_myosinORnuclei, t_ind-1);
-end % parfor
-%(so that parofr can slice by index)
-%now we have all_surfaces, a cell array of t/2 time point pairs, each
-%containing a 2x2 cell array in actin and myosin, pair upper and lower halves,
-%each containing a Height x Widths x n_offsets array of images
 
-%reshape all_surfaces before returning
-%into a cell array of timepoints x channels
-% all_surfaces_t = cell(length(time_points),1);
-% first=@(x) x(1,:);
-% all_surfaces_t(1:2:end,1) = cellfun(first,all_surfaces,'UniformOutput',false);
-% second=@(x) x(2,:);
-% all_surfaces_t(2:2:end,1) = cellfun(second,all_surfaces,'UniformOutput',false);
-% vertcat(all_surfaces_t{:})
-% %each entry all_surfaces_t(t_ind, channel) contains
-% % a Height x Width x n_offsets stack of images
-% 
+
+end % parfor 
 end %function
 
 function data=read_3D_image(filename, info_filename)
-%% Read in raw input file. 
+%% Read in raw input file.
 % Preallocate image memory to speed up computations.
 
 % Read stack sizes from info file.
@@ -195,20 +238,18 @@ kernel = ones(kernel_size)./kernel_size^2;
 heightMap=round(imfilter(heightMap,kernel,'same'));
 end
 
-function save_heightmap(heightMap, Depth, t_ind, out_folder_actin)
-        h_map_folder = [out_folder_actin filesep 'h_map'];
-        mkdir(h_map_folder);
-        heightMap_image = uint8(heightMap*(256/Depth)); % transform heightmap to 8 bit
-        imwrite(heightMap_image, [h_map_folder filesep 'img_' num2str(t_ind,'%.04d') '.jpeg']);
+function save_heightmap(heightMap, Depth, t_ind, h_map_folder)
+import utilities.my_imwrite;
+heightMap_image = uint8(heightMap*(256/Depth)); % transform heightmap to 8 bit
+my_imwrite(heightMap_image, [h_map_folder filesep 'img_' num2str(t_ind,'%.04d') '.jp2']);
 end
 
-function surfaces=select_surfaces(img_vol, t_ind, heightMap, offsets, out_folder)
+function surfaces=select_surfaces(img_vol, t_ind, heightMap, offsets, final_folder)
+import utilities.my_imwrite;
 [Height, Width, Depth]=size(img_vol);
 surfaces=zeros(Height, Width, size(offsets,2));
 offset_index=1;
 for offset = offsets
-    final_folder = [out_folder filesep 'surface_' num2str(offset,'%02d')];
-    mkdir(final_folder);
 
     % produce the surface. The image is the average of 3 planes in the surface
     z_averaging = -1:1;%-1:1; %-5:5
@@ -228,7 +269,7 @@ for offset = offsets
     %             figure;
     %             imshow(surface_00);
 
-    imwrite(surface,  [final_folder filesep 'img_' num2str(t_ind,'%.04d') '.jpeg']);
+    my_imwrite(surface,  [final_folder{offset_index} filesep 'img_' num2str(t_ind,'%.04d') '.jp2']);
     surfaces(:,:,offset_index) = surface;
     offset_index=offset_index+1;
 end
@@ -236,6 +277,7 @@ end
 end
 
 function cross_sections(img_vol, out_folder, t_ind)
+import utilities.my_imwrite;
 opt_arguments = {
     1,... % double_scan
     [1;2],... % order of scans. Left:2, Right:1
@@ -265,7 +307,5 @@ end
 
 
 name_idx = t_ind;
-
-mkdir(out_folder)
-imwrite(xsection, [out_folder filesep 'img_', num2str(name_idx, '%04d') '.jpeg'])
+my_imwrite(xsection, [out_folder filesep 'img_', num2str(name_idx, '%04d') '.jp2'])
 end
