@@ -61,12 +61,7 @@ if transform
     fprintf(fileID,['Depth: ',  num2str(new_dims(3)) '\n']);
     fclose(fileID);
 else
-    info_file = [file_folder filesep '_info.txt']; %use post-transform dims
-    %these need to be defined going into parfor loop, even if not used
-    %due to if-else inside
-    matrix=[];
-    original_dims=[];
-    new_dims=[];
+    info_file = [file_folder filesep '_info' info_file(end-7:end)]; %use post-transform dims
 end
 
 % Compute the number of images and the format
@@ -133,7 +128,7 @@ for chunk=1:size(chunks,1)+1 %chunk
     %memory of each worker and causes 'Out of Memory' error farther into the
     %loop.  Workaround is to restart the pool periodically.  Takes extra
     %time.
-parfor t=1:length(chunk_indices{chunk}) %parfor
+for t=1:length(chunk_indices{chunk}) %parfor
         t_ind=chunk_indices{chunk}(t);
         if ~transform
             rawInputImage=[file_folder filesep 'image_' num2str(t_ind,'%.04d') '_trans.raw'];
