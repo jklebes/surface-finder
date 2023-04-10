@@ -6,9 +6,11 @@ The main 3-in-1 program transform_extractsurfaces.m handles everything from 3D r
 
 Images from the microscope, taken at a 45deg angle and with a spacing or 4 pixels between planes, need to be transformed via Java/imageJ transformJ affine transform.  Java/imageJ was found to do the affine transform much faster than matlab.
 
-This step can either be done seperately, in which case transformed 3D data and flag ```transfrom=false``` is given.  Or, with ```transfrom=true```,  java commands equivelant to the imageJ script are used to read in, transform, and return the 3D data for further processing.
+This step can either be done seperately, in which case transformed 3D data and flag ```transform=false``` is given.  Or, with ```transform=true```,  java commands equivelant to the imageJ script are used to read in, transform, and return the 3D data for further processing.
 
-The ```transfrom=true``` Java route suffers from a memory problem.  I deallocate all arrays and Java objects, so that they are in principle flagged for garbage colelction.  Garbage collection does seem to happen some of the time, with amount of memory used on each worker sometimes returning to the original and total memory use approximately holding steady once memory pressure is high.  However, eventually the limit 100% memory usage is hit.  The java garbage collector does not reliably clear everything in time.  The workaround is to restart all workers after a few parfor iterations.
+The ```transform=true``` Java route suffers from a memory problem.  I deallocate all arrays and Java objects, so that they are in principle flagged for garbage colelction.  Garbage collection does seem to happen some of the time, with amount of memory used on each worker sometimes returning to the original and total memory use approximately holding steady once memory pressure is high.  However, eventually the limit 100% memory usage is hit.  The java garbage collector does not reliably clear everything in time.  The workaround is to restart all workers after a few parfor iterations.
+
+Using the ImageJ script in a seperate preprocessing step has the disadvange that temporary 3D data is written to, read from tif files in the ```_transform_tmp``` directories, using more time and space.
   
 ## surface finding
 
