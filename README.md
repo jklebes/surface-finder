@@ -10,7 +10,7 @@ This step can either be done seperately, in which case transformed 3D data and f
 
 The ```transform=true``` Java route suffers from a memory problem.  I deallocate all arrays and Java objects, so that they are in principle flagged for garbage colelction.  Garbage collection does seem to happen some of the time, with amount of memory used on each worker sometimes returning to the original and total memory use approximately holding steady once memory pressure is high.  However, eventually the limit 100% memory usage is hit.  The java garbage collector does not reliably clear everything in time.  The workaround is to restart all workers after a few parfor iterations.
 
-Using the ImageJ script in a seperate preprocessing step has the disadvange that temporary 3D data is written to, read from tif files in the ```_transform_tmp``` directories, using more time and space.
+Using the ImageJ script in a seperate preprocessing step has the disadvange that transformed 3D data is written to, read from tif files in the ```_transform_tmp``` directories, using more time and space.
   
 ## surface finding
 
