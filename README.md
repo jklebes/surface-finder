@@ -5,8 +5,11 @@ The main 3-in-1 program transform_extractsurfaces.m handles everything from 3D r
 ## setup
 
 For the ```transform=true``` java route relevant java jars, 
+
     ij-??.jar
+    
     ImageScience.jar
+    
 must be added to matlab's ```javaclasspath``` (see https://uk.mathworks.com/help/matlab/matlab_external/static-path-of-java-class-path.html) .
 You can probably find the jars within the preexisting imageJ/Fiji folder.  
 
