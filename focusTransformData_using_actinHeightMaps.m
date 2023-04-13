@@ -50,7 +50,6 @@ function focusTransformData_using_actinHeightMaps(file_folder_actin, filefolder_
 %     sq_side = opt_arguments{2};
 %     width_lim = opt_arguments{3};
 %     overlaps = opt_arguments{4};
-
 kernel_size =16;
 sq_side = 25;
 %width_lim = 40;
@@ -156,7 +155,7 @@ parfor t_ind=1:length(time_points)
                 h_map_folder = [out_folder_actin filesep 'h_map'];
             mkdir(h_map_folder)
             heightMap_image = uint8(heightMap*(256/Depth)); % transform heightmap to 8 bit
-            imwrite(heightMap_image, [h_map_folder filesep 'img_' num2str(t_ind,'%.04d') '.tif']);
+            my_imwrite(heightMap_image, [h_map_folder filesep 'img_' num2str(t_ind,'%.04d') '.tif']);
             end
 
             % produce the surface. The image is the average of 3 planes in the surface
@@ -180,7 +179,7 @@ parfor t_ind=1:length(time_points)
             %% save surface and heightmap
             %      disp('save surface 1');
 
-            imwrite(surface_00,  [final_folder filesep 'img_' num2str(t_ind,'%.04d') '.tif']);
+            my_imwrite(surface_00,  [final_folder filesep 'img_' num2str(t_ind,'%.04d') '.tif']);
 
         end
 
@@ -234,7 +233,7 @@ parfor t_ind=1:length(time_points)
 
             %% save surface %%   and heightmap
 
-            imwrite(surface_00,  [final_folder filesep 'img_' num2str(t_ind,'%.04d') '.tif']);
+            my_imwrite(surface_00,  [final_folder filesep 'img_' num2str(t_ind,'%.04d') '.tif']);
 
 
             %                 if offset == 0

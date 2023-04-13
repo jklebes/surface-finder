@@ -1,5 +1,8 @@
-function all_surfaces=transform_extractsurfaces(transform, file_folder, out_folder,  xsection_out_folder, expFolder, info_file, matrix_path, time_points, workers, offsets, varargin)
+function transform_extractsurfaces(transform, file_folder, out_folder,  xsection_out_folder, expFolder, info_file, matrix_path, time_points, workers, offsets, varargin)
 %{
+%     Three-in-one: optionally 45deg transform, extract focussed surfaces,
+%     and extract cross sections
+%
 %     Function to focus the surface of the embryo using 45 degrees transformed data. 
 %     This is a modified verision of the square gradient focusing algorithm. 
 %     Briefly, the volume is divided in columns. For each plane of the columns 
@@ -32,8 +35,6 @@ function all_surfaces=transform_extractsurfaces(transform, file_folder, out_fold
 %     Guillermo 2021
 
 %}
-import utilities.expReader;
-all_surfaces=[];
 %% Parse arguments
 %TODO parse arguments propoerly
 kernel_size =16;
@@ -60,13 +61,16 @@ if transform
     fprintf(fileID,['Height: ',  num2str(new_dims(2)) '\n']);
     fprintf(fileID,['Depth: ',  num2str(new_dims(3)) '\n']);
     fclose(fileID);
+    chunk_size=3*workers;
 else
     info_file = [file_folder filesep '_info.txt']; %use post-transform dims
+    %restarting pool not needed - everything in one "chunk"
+    chunk_size=length(time_points);
     %these need to be defined going into parfor loop, even if not used
-    %due to if-else inside
     matrix=[];
     original_dims=[];
     new_dims=[];
+    
 end
 
 % Compute the number of images and the format
@@ -104,7 +108,6 @@ elseif pool.NumWorkers~=workers
     delete(pool);
     parpool(workers);
 end
-%all_surfaces=zeros(new_dims(1),new_dims(2),length(offsets),length(time_points), 'uint8'); 
 
 %prepare output directories 
 h_map_folder = [out_folder filesep 'h_map'];
@@ -117,31 +120,35 @@ for offset=offsets
     offset_index=offset_index+1;
 end
 mkdir(xsection_out_folder)
-chunk_workers=workers*3;
-remainder_length=mod(length(time_points), chunk_workers);
-chunks=reshape(time_points(1:end-remainder_length), [], chunk_workers);
+%calculate dividing timepoints into chunks
+remainder_length=mod(length(time_points), chunk_size);
+if length(time_points)-remainder_length>0
+chunks=reshape(time_points(1:end-remainder_length), chunk_size,[]);
+else
+    chunks=[];
+end
 chunk_indices = cell([1 size(chunks,1)+1]);
-for i=1:size(chunks,1)
-chunk_indices{i} = chunks(i,:);
+for i=1:size(chunks,2)
+chunk_indices{i} = chunks(:,i);
 end
 if remainder_length>0
 chunk_indices{end} = time_points(end-remainder_length+1:end);
 end
-for chunk=1:size(chunks,1)+1 %chunk
+for chunk=1:size(chunks,2)+1 %chunk
     %the chunking is because of inadequate activity of java garbage collector: 
     %despite deallocating, something builds up in the
     %memory of each worker and causes 'Out of Memory' error farther into the
     %loop.  Workaround is to restart the pool periodically.  Takes extra
-    %time.
+    %time.  Kicks in at transform=true route only because of chunk_size 
+    % chosen above.
 parfor t=1:length(chunk_indices{chunk}) %parfor
         t_ind=chunk_indices{chunk}(t);
         if ~transform
+            %read in already-transformed 3D data
             rawInputImage=[file_folder filesep 'image_' num2str(t_ind,'%.04d') '_trans.raw'];
-            %% Read in raw input file
             disp(['image ' num2str(t_ind) '  start read']);
             tstart = tic;
             img_vol = read_3D_image(rawInputImage, info_file);
-
             tend = toc(tstart);
             disp(['tmp_trans_ data reading ' num2str(t_ind) ' took ' num2str(tend) ' seconds.'])
         else
@@ -152,11 +159,11 @@ parfor t=1:length(chunk_indices{chunk}) %parfor
             tstart = tic;
             img_vol =transform_45degrees_Java_single(img_path, matrix, original_dims(1:3), new_dims(1:3));   
             tend = toc(tstart);
-            java.lang.System.gc(); %request java garbage collection?
+            java.lang.System.gc(); %request java garbage collection, mostly works
             disp(['data read and transform ' num2str(t_ind) ' took ' num2str(tend) ' seconds.'])
         end
 
-        %% process to heightmaps
+        %% extract heightmaps with surface finding algorithm
         heightmap=calculate_heightmap(img_vol, overlaps, sq_side, kernel_size); 
 
         %% save heightmap
@@ -164,9 +171,9 @@ parfor t=1:length(chunk_indices{chunk}) %parfor
         save_heightmap(heightmap, Depth, t_ind, h_map_folder)
 
         %% extract and save surfaces
-        %all_surfaces(:,:,:,t)=select_surfaces(img_vol, t_ind, heightmap, offsets, final_folder); 
         select_surfaces(img_vol, t_ind, heightmap, offsets, final_folder); 
-        %% do cross sections, while the 3D data for tindex-1, tindex is in memory
+
+        %% do cross sections, while the 3D data is in memory
         cross_sections(img_vol, xsection_out_folder, t_ind);
 end % parfor 
 java.lang.System.gc();
@@ -206,7 +213,7 @@ function heightMap=calculate_heightmap(img_vol, overlaps, sq_side, kernel_size)
 heightMap_stack = zeros(Height,Width,overlaps);
 
 for disIdx = 1:overlaps % 3 planes of heightmap_stack are filled using
-    % 3 different sq_size x sq_side griddings,
+    % 3 different sq_side x sq_side griddings,
     % offset by sq_size/overlaps from each
     % other
 
@@ -250,24 +257,22 @@ for disIdx = 1:overlaps % 3 planes of heightmap_stack are filled using
         end
     end
 end
-img_vol=[];
+
 disp('calculate final height map');
 
 %% final heightmap
 heightMap = round(max(heightMap_stack,[],3));
-heightMap_stack=[];
+
 kernel = ones(kernel_size)./kernel_size^2;
 heightMap=round(imfilter(heightMap,kernel,'same'));
 end
 
 function save_heightmap(heightMap, Depth, t_ind, h_map_folder)
-import utilities.my_imwrite;
 heightMap_image = uint8(heightMap*(256/Depth)); % transform heightmap to 8 bit
 my_imwrite(heightMap_image, [h_map_folder filesep 'img_' num2str(t_ind,'%.04d') '.jp2']);
 end
 
 function select_surfaces(img_vol, t_ind, heightMap, offsets, final_folder)
-import utilities.my_imwrite;
 [Height, Width, Depth]=size(img_vol);
 surfaces=zeros(Height, Width, size(offsets,2));
 offset_index=1;
@@ -294,13 +299,11 @@ for offset = offsets
     my_imwrite(surface,  [final_folder{offset_index} filesep 'img_' num2str(t_ind,'%.04d') '.jp2']);
     surfaces(:,:,offset_index) = surface;
     offset_index=offset_index+1;
-    vol=[];
 end
 
 end
 
 function cross_sections(img_vol, out_folder, t_ind)
-import utilities.my_imwrite;
 opt_arguments = {
     1,... % double_scan
     [1;2],... % order of scans. Left:2, Right:1

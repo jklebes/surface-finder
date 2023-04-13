@@ -1,5 +1,7 @@
 function xsectionsTransformData(file_folder, out_folder, time_interval, workers, varargin)
 %{
+    CrossSections
+
     Function to produce exploratory images of cross sections of transformed
     image volumes. 
 
@@ -18,7 +20,6 @@ function xsectionsTransformData(file_folder, out_folder, time_interval, workers,
 
 %}
     %% Parse arguments
-    import utilities.expReader;
     opt_arguments = {
                      1,... % double_scan
                      [1;2],... % order of scans. Left:2, Right:1
