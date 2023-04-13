@@ -1,3 +1,5 @@
+! This git repo was merged into https://github.com/cjwlab/DSLMDataAnalysis/tree/jason as subfolder, development here is done
+
 # transform_extractsurfaces
 
 The main 3-in-1 program transform_extractsurfaces.m handles everything from 3D raw data to selected 2D slices.  The transform, surface finding, and cross section steps have been merged so that 3D data only has to be read into memory once during the analysis.
