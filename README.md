@@ -2,6 +2,17 @@
 
 The main 3-in-1 program transform_extractsurfaces.m handles everything from 3D raw data to selected 2D slices.  The transform, surface finding, and cross section steps have been merged so that 3D data only has to be read into memory once during the analysis.
 
+## setup
+
+For the ```transform=true``` java route relevant java jars, 
+
+    ij-??.jar
+    
+    ImageScience.jar
+    
+must be added to matlab's ```javaclasspath``` (see https://uk.mathworks.com/help/matlab/matlab_external/static-path-of-java-class-path.html) .
+You can probably find the jars within the preexisting imageJ/Fiji folder.  
+
 ## transformation
 
 Images from the microscope, taken at a 45deg angle and with a spacing or 4 pixels between planes, need to be transformed via Java/imageJ transformJ affine transform.  Java/imageJ was found to do the affine transform much faster than matlab.
